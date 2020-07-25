@@ -1,0 +1,326 @@
+---
+title: "Predictive Text Generator - Part II"
+author: "Aditya Iyengar"
+date: "18/04/2020"
+output: html_document
+---
+
+## Overview
+This document explains the actual structure of the n-gram predictive text generator model. The data is loaded, cleaned and split into training, test and validation sets. First, a basic model is applied to the test set, following which multiple advanced models with several parameters are trained. Some sample output cases are also displayed to illustrate how the model actually works.
+  
+## Loading the Datasets
+Download the datasets from [here](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip) and store them in the working directory. We will currently work with the English (US) datasets only.  
+```{r echo = TRUE, results = FALSE}
+conblogs <- file("./final/en_US/en_US.blogs.txt")
+connews <- file("./final/en_US/en_US.news.txt")
+contwitter <- file("./final/en_US/en_US.twitter.txt")
+
+suppressWarnings(blogs <- readLines(conblogs))
+suppressWarnings(news <- readLines(connews))
+suppressWarnings(twitter <- readLines(contwitter))
+
+close(conblogs);
+close(connews);
+close(contwitter)
+```
+  
+Just as we did in [Part I](https://rpubs.com/adityaiyengar/601052), we will sample a fraction of the tests. This fraction was prescribed to be 10% of the blogs, 100% of the news articles and 10% of the Twitter posts.  
+```{r}
+set.seed(1234)
+samplelines <- c(sample(blogs, length(blogs) * 0.1),
+                 sample(news, length(news)),
+                 sample(twitter, length(twitter) * 0.1))
+```
+  
+## Splitting the Datasets
+We shuffle the dataset comprising the sampled text and divide it into training, validation and test sets. 80% of the set is allocated for training while the rest is equally divided into validation and test sets.
+```{r}
+set.seed(1234)
+samplelines <- sample(samplelines)
+valindex <- floor(length(samplelines) * 0.8)
+testindex <- floor(length(samplelines) * 0.9)
+
+training <- samplelines[1:valindex]
+validation <- samplelines[(valindex+1):testindex]
+test <- samplelines[(testindex+1):length(samplelines)]
+```
+
+## Cleaning the Datasets
+As in the exploratory analysis, we will tidy the datasets. We define a function to generate tokens which will be used in further modelling. The function splits the lines on any character that isn't a letter or an apostrophe.  
+```{r}
+tokenizer <- function(lines) {
+    lines <- tolower(lines)
+    lines <- gsub("'", "'", lines)
+    lines <- gsub("[.!?]$|[.!?] |$", " ''split'' ", lines)
+    tokens <- unlist(strsplit(lines, "[^a-z']"))
+    tokens <- tokens[tokens != ""]
+    return(tokens)
+}
+
+tokens <- tokenizer(training)
+valtokens <- tokenizer(validation)
+testtokens <- tokenizer(test)
+```
+  
+## Generating Frequencies for n-grams
+We would now like to answer the question - *How many times does a particular n-gram appear during training?*
+  
+First of all, we shift the tokens by one token at a time by removing the first token and add a dummy token (.) at the end. We will work upto 6-grams.  
+```{r}
+tokens2 <- c(tokens[-1], ".")
+tokens3 <- c(tokens2[-1], ".")
+tokens4 <- c(tokens3[-1], ".")
+tokens5 <- c(tokens4[-1], ".")
+tokens6 <- c(tokens5[-1], ".")
+```
+  
+Now we paste the first n tokens to generate the list of n-grams.  
+```{r}
+onegram <- tokens
+twogram <- paste(tokens, tokens2)
+threegram <- paste(tokens, tokens2, tokens3)
+fourgram <- paste(tokens, tokens2, tokens3, tokens4)
+fivegram <- paste(tokens, tokens2, tokens3, tokens4, tokens5)
+sixgram <- paste(tokens, tokens2, tokens3, tokens4, tokens5, tokens6)
+```
+  
+We had created demarcations ('split') for the sentence boundaries. Given these markers, we can remove those n-grams that include parts of two different sentences because they wouldn't make any coherent sense.  
+```{r}
+onegram <- onegram[!grepl("''split''", onegram)]
+twogram <- twogram[!grepl("''split''", twogram)]
+threegram <- threegram[!grepl("''split''", threegram)]
+fourgram <- fourgram[!grepl("''split''", fourgram)]
+fivegram <- fivegram[!grepl("''split''", fivegram)]
+sixgram <- sixgram[!grepl("''split''", sixgram)]
+```
+  
+Great! Now we have n-grams all of which lie entirely in one sentence. We now sort these n-grams in decreasing order of their frequency.  
+```{r}
+onegram <- sort(table(onegram), decreasing=TRUE)
+twogram <- sort(table(twogram), decreasing=TRUE)
+threegram <- sort(table(threegram), decreasing=TRUE)
+fourgram <- sort(table(fourgram), decreasing=TRUE)
+fivegram <- sort(table(fivegram), decreasing=TRUE)
+sixgram <- sort(table(sixgram), decreasing=TRUE)
+```
+ 
+Let's look at the top 10 n-grams visually.  
+```{r echo = FALSE}
+par(mar = c(12, 3, 3, 1))
+barplot(as.numeric(onegram[1:10]), names.arg=names(onegram[1:10]), las=2, col="blue", border="black", density=seq(100, 10, -9), main = "Unigrams", ylab = "Frequency")  
+barplot(as.numeric(twogram[1:10]), names.arg=names(twogram[1:10]), las=2, col="magenta", border="black", density=seq(100, 10, -9), main = "Bigrams", ylab = "Frequency")  
+barplot(as.numeric(threegram[1:10]), names.arg=names(threegram[1:10]), las=2, col="green", border="black", density=seq(100, 10, -9), main = "Trigrams", ylab = "Frequency")  
+barplot(as.numeric(fourgram[1:10]), names.arg=names(fourgram[1:10]), las=2, col="brown", border="black", density=seq(100, 10, -9), main = "Fourgrams", ylab = "Frequency")  
+barplot(as.numeric(fivegram[1:10]), names.arg=names(fivegram[1:10]), las=2, col="orange", border="black", density=seq(100, 10, -9), main = "Fivegrams", ylab = "Frequency")  
+barplot(width = 2, as.numeric(sixgram[1:10]), names.arg=names(sixgram[1:10]), las=2, col="purple", border="black", density=seq(100, 10, -9), main = "Sixgrams", ylab = "Frequency")  
+```
+  
+## Predicting N-Gram Probabilities
+We are now at the most crucial part of the model. We have to devise an algorithm that assigns each n-gram with an associated probability.  
+For this, we use [Kneser-Ney Smoothing](https://en.wikipedia.org/wiki/Kneser%E2%80%93Ney_smoothing). Briefly, what this entails is that we consider the frequency of a unigram in relation to possible words preceding it. For example, consider the bigram **San Francisco**. If it appears several times in a training corpus, the frequency of the unigram **Francisco**, by itself, will also be high, which leads to skewed results.  
+Before we actually incorporate Kneser-Ney Smoothing, let us define a few basic functions.  
+
+```{r}
+suppressPackageStartupMessages(library(stringr))
+#Function to extract the last 'n' words of a string
+extractwords <- function(string, n) {
+  seq <- paste("[a-z']+( [a-z']+){", n - 1, "}$", sep="")
+  return(substring(string, str_locate(string, seq)[,1]))
+}
+
+#Function to remove the last word of a string
+removelast <- function(string)
+  return(sub(" [a-z']+$", "", string))
+```
+  
+We now define the function `knesernay` which accepts a list of n-grams and a chosen discount value and returns a list of probabilities of each n-gram.  
+
+```{r}
+knesernay <- function(ngram, d) {
+    n <- length(strsplit(names(ngram[1]), " ")[[1]])
+    
+    if(n==1) {
+        noFirst <- onegram[extractwords(names(twogram), 1)]
+        pContinuation <- table(names(noFirst))[names(onegram)]/length(twogram)
+        return(pContinuation)
+    }
+    
+    nMinusOne <- list(onegram, twogram, threegram, fourgram, fivegram, sixgram)[[n-1]]
+    noLast <- nMinusOne[removelast(names(ngram))]
+    noFirst <- nMinusOne[extractwords(names(ngram), n-1)]
+    
+    discount <- ngram - d
+    discount[discount < 0] <- 0
+    lambda <- d*table(names(noLast))[names(noLast)]/noLast
+    if(n == 2)
+      pContinuation <- table(names(noFirst))[names(noFirst)]/length(ngram)
+    else
+      pContinuation <- knesernay(noFirst, d)
+    
+    ngramprobs <- discount/noLast + (lambda*pContinuation/length(ngram))
+    return(ngramprobs)
+}
+```
+  
+Perfect! Now let us feed in our training n-grams and get the probability vector for each n-gram list. The choice of discount rate (always between 0 and 1) can be arbitrary at this moment. We will see what happens if we change this rate at a later stage.  
+```{r}
+d <- 0.75
+onep <- knesernay(onegram, d)
+twop <- knesernay(twogram, d)
+threep <- knesernay(threegram, d)
+fourp <- knesernay(fourgram, d)
+fivep <- knesernay(fivegram, d)
+sixp <- knesernay(sixgram, d)
+```
+  
+  
+## Building a Model
+We now have probabilities associated with every n-gram. One basic approach to the model could be the following. Retrieve the last n-1 words of the input text and look for the n-gram with the highest probability that starts with these n-1 words. The last remaining word in the n-gram will be our prediction. However, this model is associated with two main problems.  
+
+* What if there are no n-grams starting with the given n-1 letters?
+* Even if there is such an n-gram, the probability might be so low that we would rather have a lower n-gram as the predicted output.  
+
+A back-off model solves both problems. Whenever an n-gram starting with the last n-1 words of the input doesn’t occur or it doesn’t exceeds a certain threshold, we ‘back off’ to the lower tier n-grams and hope that the relevant (n-1)-gram does exists or results in a higher probability.  
+
+We have two degrees of freedom here - what the threshold should be, and at which n-th n-gram we should start looking.
+  
+For validation, we split every set of six words into five input words and we hope to predict the sixth word as the output.  
+```{r}
+valtokens2 <- c(valtokens[-1], ".")
+valtokens3 <- c(valtokens2[-1], ".")
+valtokens4 <- c(valtokens3[-1], ".")
+valtokens5 <- c(valtokens4[-1], ".")
+valtokens6 <- c(valtokens5[-1], ".")
+valsixgram <- paste(valtokens, valtokens2, valtokens3,
+                    valtokens4, valtokens5, valtokens6)
+```
+  
+This splits the validation corpus just as we did for our training corpus.  
+```{r}
+createModel <- function(n, threshold) {
+    ngram <- list(twop, threep, fourp, fivep, sixp)[[n-1]]
+    
+    model <- ngram[extractwords(valsixgram[1:10000], n)]
+    names(model) <- valsixgram[1:10000]
+    
+    if(n > 5) model[is.na(model) | model < threshold] <- 
+        fivep[extractwords(names(model[is.na(model) | model < threshold]), 5)]
+    if(n > 4) model[is.na(model) | model < threshold] <- 
+        fourp[extractwords(names(model[is.na(model) | model < threshold]), 4)]
+    if(n > 3) model[is.na(model) | model < threshold] <- 
+        threep[extractwords(names(model[is.na(model) | model < threshold]), 3)]
+    if(n > 2) model[is.na(model) | model < threshold] <- 
+        twop[extractwords(names(model[is.na(model) | model < threshold]), 2)]
+    if(n > 1) model[is.na(model) | model < threshold] <- 
+        onep[extractwords(names(model[is.na(model) | model < threshold]), 1)]
+    return(model)
+}
+```
+  
+  
+## How good is the model?
+One easy way to measure how accurate our model is would be to use **perplexity**. Perplexity is an inner quality measure which is nothing but the inverse of the geometric mean of the probabilities.  
+Thus $Perplexity = (p_1 p_2 ... p_n)^{-1/n}$  
+To avoid numerical underflow, we use logarithms, as demonstrated below:  
+```{r}
+perplexity <- function(prob) {
+    return(exp(-sum(log(prob)) / length(prob)))
+}
+```
+   
+Let us try this measure out on a sample model. Generally, lower the perplexity the better.  
+```{r}
+model <- createModel(5, 0.005)
+perplexity(model[!is.na(model)])
+```
+  
+Now we are in a position to answer the pressing question? What values of `n` and `threshold` are the best? Let us analyze how perplexity varies with these variables. The idea is to minimize the aggregate perplexity.  
+```{r}
+#Function to return the aggregate perplexity for n models
+aggperplexity <- function(minT, maxT, ngram, n) {
+    perp <- data.frame("Threshold" = seq(minT, maxT, by=maxT/n), "Perplexity" = seq(0, n, by=1))
+    for(i in seq(0, n, by=1)) {
+        model <- createModel(ngram, i*maxT/n)
+        perp[i+1, 2] <- perplexity(model[!is.na(model)])
+    }
+    return(perp)
+}
+
+sixgrammodel <- aggperplexity(minT=0, maxT=0.001, ngram=5, n = 5)
+fivegrammodel <- aggperplexity(minT=0, maxT=0.001, ngram=5, n = 5)
+fourgrammodel <- aggperplexity(minT=0, maxT=0.001, ngram=4, n = 5)
+threegrammodel <- aggperplexity(minT=0, maxT=0.001, ngram=3, n = 5)
+twogrammodel <- aggperplexity(minT=0, maxT=0.001, ngram=2, n = 5)
+minimum_perplexity <- c(min(twogrammodel$Perplexity), min(threegrammodel$Perplexity),
+                        min(fourgrammodel$Perplexity), min(fivegrammodel$Perplexity),
+                        min(sixgrammodel$Perplexity))
+ngram_model <- 2:6
+par(mfrow = c(3,2))
+plot(Perplexity ~ Threshold, twogrammodel, pch = 19, type = "l", main = "Bigram")
+plot(Perplexity ~ Threshold, threegrammodel, pch = 19, type = "l", main = "Trigram")
+plot(Perplexity ~ Threshold, fourgrammodel, pch = 19, type = "l", main = "Fourgram")
+plot(Perplexity ~ Threshold, fivegrammodel, pch = 19, type = "l", main = "Fivegram")
+plot(Perplexity ~ Threshold, sixgrammodel, pch = 19, type = "l", main = "Sixgram")
+plot(minimum_perplexity ~ ngram_model, pch = 19, type = "l", main = "Minimum Perplexity per model")
+
+```
+  
+  
+Okay, we have some interesting information here. Clearly, the best models are the sixgram models. Also, for each model, the threshold of 0.0002 seems to be the best bet. One final observation is that there isn't much of a difference between the minimum perplexity for four, five and sixgrams. To save on computational time, we choose a **fourgram model** with **threshold = 0.0002**.  
+
+## Prediction Time!
+Now it's time to build the final function that performs the prediction task.  
+```{r}
+library(dplyr)
+onegramDF <- data.frame("Words" = (names(onegram)), "Probability" = onep, stringsAsFactors=F)
+onegramDF <- onegramDF %>% arrange(desc(Probability.Freq))
+twogramDF <- data.frame("FirstWords" = removelast(names(twogram)), 
+                        "LastWord" = extractwords(names(twogram), 1), 
+                        "Probability" = twop, stringsAsFactors=F)
+twogramDF <- twogramDF %>% arrange(desc(Probability.Freq)) %>% filter(Probability.Freq > 0.0002)
+threegramDF <- data.frame("FirstWords" = removelast(names(threegram)), 
+                        "LastWord" = extractwords(names(threegram), 1), 
+                        "Probability" = threep, stringsAsFactors=F)
+threegramDF <- threegramDF %>% arrange(desc(Probability.Freq)) %>% filter(Probability.Freq > 0.0002)
+fourgramDF <- data.frame("FirstWords" = removelast(names(fourgram)), 
+                        "LastWord" = extractwords(names(fourgram), 1), 
+                        "Probability" = fourp, stringsAsFactors=F)
+fourgramDF <- fourgramDF %>% arrange(desc(Probability.Freq)) %>% filter(Probability.Freq > 0.0002)
+```
+  
+```{r}
+predictor <- function(input) {
+    n <- length(strsplit(input, " ")[[1]])
+    prediction <- c()
+    if(n >= 3 && length(prediction)<3) 
+        prediction <- c(prediction, filter(fourgramDF, extractwords(input, 3) == FirstWords)$LastWord)
+    if(n >= 2 && length(prediction)<3) 
+        prediction <- c(prediction, filter(threegramDF, extractwords(input, 2) == FirstWords)$LastWord)
+    if(n >= 1 && length(prediction)<3) 
+        prediction <- c(prediction, filter(twogramDF, extractwords(input, 1) == FirstWords)$LastWord)
+    if(length(prediction)<3 )
+      return(onegramDF$Words[1:3])
+    
+    return(unique(prediction)[1:3])
+}
+```
+  
+## Conclusion
+Let us look at how our model fares:  
+```{r echo = FALSE}
+suppressPackageStartupMessages(library(kableExtra))
+suppressPackageStartupMessages(library(dplyr))
+out1 <- c("every day is a new", predictor("every day is a new"))
+out2 <- c("what are you", predictor("what are you"))
+out3 <- c("i love", predictor("i love"))
+out4 <- c("i keep saying this from time to", predictor("i keep saying this from time to"))
+out5 <- c("you are an", predictor("you are an"))
+outdf <- as.data.frame(rbind(out1, out2, out3, out4, out5))
+names(outdf) <- c("Input", "Prediction #1", "Prediction #2", "Prediction #3")
+kable(outdf) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+  
+Looks pretty coherent, eh? Well, the algorithm seems to be avoiding some common pitfalls - the fact that it recognizes common phrases as in (1) and (4), knows what tense to use as in (2) and can recognize articles as in (5). We have sacrificed some accuracy so as to obtain better computational efficiency, often the case while programming with limited resources.  
+
+------

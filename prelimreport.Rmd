@@ -1,0 +1,188 @@
+---
+title: "Predictive Text Generator - Part I"
+author: "Aditya Iyengar"
+date: "18/04/2020"
+output: html_document
+---
+
+## Overview
+The objective of this project is to create an app that predicts the next word while typing. We have with us several [datasets](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip) which have been collected by a web crawler. In this document, we load the datasets, tidy them up and then perform some basic exploratory analyses on the cleaned data.  
+
+## Loading the Datasets
+Download the datasets and store them in the working directory. We will currently work with the English (US) datasets only.  
+```{r echo = FALSE, results = FALSE}
+conblogs <- file("./Coursera-SwiftKey/final/en_US/en_US.blogs.txt")
+connews <- file("./Coursera-SwiftKey/final/en_US/en_US.news.txt")
+contwitter <- file("./Coursera-SwiftKey/final/en_US/en_US.twitter.txt")
+
+suppressWarnings(blogs <- readLines(conblogs))
+suppressWarnings(news <- readLines(connews))
+suppressWarnings(twitter <- readLines(contwitter))
+
+close(conblogs);
+close(connews);
+close(contwitter)
+```
+  
+Let us have a brief look at the contents of each of the datasets.  
+```{r echo = TRUE}
+blogs[4]
+news[2]
+twitter[1:4]
+```
+  
+Now, let us look at some properties of the raw data:  
+```{r echo = FALSE}
+suppressPackageStartupMessages(library(stringi))
+suppressPackageStartupMessages(library(ngram))
+suppressPackageStartupMessages(library(kableExtra))
+suppressPackageStartupMessages(library(dplyr))
+lengths <- c(length(blogs), length(news), length(twitter))
+words <- c(wordcount(blogs), wordcount(news), wordcount(twitter))
+chars <- c(sum(nchar(blogs)), sum(nchar(news)), sum(nchar(twitter)))
+avgwords <- words/lengths
+avgchars <- chars/lengths
+df <- as.data.frame(cbind(lengths, words, chars, avgwords, avgchars))
+names(df) <- c("Total posts", "Total words", "Total Characters", "Words per post", "Characters per post")
+Type <- c("Blogs", "News", "Twitter")
+df <- cbind(Type, df)
+kable(df) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+  
+This does make sense. Twitter has the fewest characters and words per post, possibly due to the 140/280 character limit. The average word and character distribution is similar for news articles and blog posts, although the total number of posts is vastly different.  
+  
+## Cleaning the Datasets
+The datasets are massive, thus we sample from the datasets. We account for the different number of total posts by sampling as follows, to ensure a similar contribution from each of the datasets:
+  
+- Select 10% of the tweets
+- Select 10% of the blogs
+- Select 100% of the news  
+
+```{r}
+set.seed(1234)
+samplelines <- c(sample(blogs, length(blogs) * 0.1),
+                 sample(news, length(news)),
+                 sample(twitter, length(twitter) * 0.1))
+samplelines <- gsub("[^a-zA-Z']", " ", samplelines)
+samplelines <- gsub(" {2,}", " ", samplelines)
+samplelines <- trimws(samplelines)
+samplelines <- tolower(samplelines)
+samplelines <- strsplit(samplelines, " ")
+totallength <- length(samplelines)
+```
+    
+Let us now see how this data looks.  
+
+```{r}
+print(totallength)
+head(samplelines, 2)
+```
+  
+## Creating the Dictionaries
+To proceed with the model, we would ideally like a dictionary with every n-gram. Here, we create a dictionary for n = 1, 2, 3 in order to find out the most common unigrams, bigrams and trigrams.  
+
+### Unigrams
+The following code snippet parses through the sample of the dataset. If a word is not already present in the unigrams list, it initializes its first occurrence, otherwise it increments the previous number of cumulative occurrences.
+  
+```{r}
+unigram = list()
+count <- length(samplelines)/50
+for(line in samplelines) {
+    count <- count - 1
+    if(count < 0) break;
+    for(word in line) {
+      if(is.null(unigram[[word]]))
+        unigram[[word]] = 1
+      else 
+        unigram[[word]] = unigram[[word]] + 1
+    }
+}
+unigram <- unigram[order(unlist(unigram), decreasing=TRUE)]
+barplot(as.numeric(unigram[1:20]), names.arg=names(unigram[1:20]), las=2, col="blue", border="black", density=seq(100, 10, -4), main = "Unigrams", xlab = "Unigram", ylab = "Frequency")
+```
+  
+  
+### Bigrams
+The following code snippet parses through the sample of the dataset. If a bigram is not already present in the bigrams list, it initializes its first occurrence, otherwise it increments the previous number of cumulative occurrences.
+  
+```{r}
+bigram = list()
+count <- totallength/50
+for(line in samplelines) {
+    count <- count - 1
+    print(count)
+    if(count < 0) break;
+    for(word in line) {
+        if(line[1] != word) {
+            create_bigram <- paste(last, word)
+            if(is.null(bigram[[create_bigram]]))
+                bigram[[create_bigram]] = 1
+            else
+              bigram[[create_bigram]] = bigram[[create_bigram]] + 1
+        }
+        last <- word
+    }
+
+}
+bigram <- bigram[order(unlist(bigram), decreasing=TRUE)]
+barplot(as.numeric(bigram[1:20]), names.arg=names(bigram[1:20]), las=2, col="magenta", border="black", density=seq(100, 10, -4), main = "Bigrams", xlab = "Bigram", ylab = "Frequency")
+```
+  
+  
+### Trigrams
+```{r}
+trigram = list()
+count <- totallength/50
+for(line in samplelines) {
+    count <- count - 1
+    print(count)
+    if(count < 0) break;
+    for(word in line) {
+        if(line[1] != word) {
+            if(line[2] != word) {
+                create_trigram <- paste(secondlast, last, word)
+                if(is.null(trigram[[create_trigram]]))
+                  trigram[[create_trigram]] = 1
+                else
+                  trigram[[create_trigram]] = trigram[[create_trigram]] + 1
+            }
+            secondlast <- last
+        }
+        last <- word
+    }
+}
+trigram <- trigram[order(unlist(trigram), decreasing=TRUE)]
+barplot(as.numeric(trigram[1:20]), names.arg=names(trigram[1:20]), las=2, col="green", border="black", density=seq(100, 10, -4), main = "Trigrams", xlab = "Trigram", ylab = "Frequency")
+```
+  
+  
+## Some Other Questions
+First of all, we would like to find out the number of unique words in the dictionary.  
+```{r}
+uniquewords <- length(unigram)
+uniquewords
+```
+  
+Now, we would like to find out how many unique words account for 90% of the total words occurring in the datasets.
+```{r}
+sum <- 0
+uniquewords <- 0
+for (i in 1:length(unigram)) sum = sum + unigram[[i]]
+sum90 <- 0.9*sum
+for (i in 1:length(unigram)) {
+    sum90 <- sum90 - unigram[[i]]
+    uniquewords <- uniquewords + 1
+    if(sum90 <= 0) break;
+}
+print(c(uniquewords, uniquewords/length(unigram)*100))
+```
+  
+Okay, so we see that about 20% of the unique words in the `unigram` list account for 90% of the total words in the dataset. Seems like the Pareto principle in action, eh? Quantitative linguistics is actually governed by [Zipf's law](https://en.wikipedia.org/wiki/Zipf%27s_law) which states the exact same principle.  
+How do we know if what we're doing makes any sense? A good barometer is the [Oxford English Corpus](https://en.wikipedia.org/wiki/Most_common_words_in_English). Turns out that 18 of our top 20 unigrams find a place in the OEC's top 20. Not bad for a crude first attempt!
+  
+  
+## What Next?
+We have performed basic exploratory analysis. Now, we have a basic idea of the structure of our datasets and what words are more likely to come up while typing. The basic idea for the rest of the project will be to look out for the last typed words in the list of n-grams and return the following word in the n-gram with the greatest occurrence.
+  
+------
