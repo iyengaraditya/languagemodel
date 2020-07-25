@@ -11,9 +11,9 @@ The objective of this project is to create an app that predicts the next word wh
 ## Loading the Datasets
 Download the datasets and store them in the working directory. We will currently work with the English (US) datasets only.  
 ```{r echo = FALSE, results = FALSE}
-conblogs <- file("./Coursera-SwiftKey/final/en_US/en_US.blogs.txt")
-connews <- file("./Coursera-SwiftKey/final/en_US/en_US.news.txt")
-contwitter <- file("./Coursera-SwiftKey/final/en_US/en_US.twitter.txt")
+conblogs <- file("./final/en_US/en_US.blogs.txt")
+connews <- file("./final/en_US/en_US.news.txt")
+contwitter <- file("./final/en_US/en_US.twitter.txt")
 
 suppressWarnings(blogs <- readLines(conblogs))
 suppressWarnings(news <- readLines(connews))
